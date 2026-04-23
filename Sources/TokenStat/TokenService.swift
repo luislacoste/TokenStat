@@ -108,7 +108,14 @@ final class ClaudeService {
             throw NSError(domain: "OAuthUsage", code: http.statusCode,
                           userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode): \(body)"])
         }
-        return try JSONDecoder().decode(OAuthUsageResponse.self, from: data)
+        do {
+            return try JSONDecoder().decode(OAuthUsageResponse.self, from: data)
+        } catch {
+            let rawBody = String(data: data, encoding: .utf8) ?? "<unreadable>"
+            throw NSError(domain: "OAuthUsage", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "JSON decode error: \(error)\nResponse: \(rawBody)"
+            ])
+        }
     }
 }
 

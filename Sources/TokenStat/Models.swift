@@ -16,7 +16,7 @@ struct OAuthUsageResponse: Decodable {
 
     struct UsagePeriod: Decodable {
         let utilization: Double   // 0–100
-        let resetsAt: String
+        let resetsAt: String?
 
         enum CodingKeys: String, CodingKey {
             case utilization
@@ -24,6 +24,7 @@ struct OAuthUsageResponse: Decodable {
         }
 
         var resetsAtDate: Date? {
+            guard let resetsAt else { return nil }
             let f = ISO8601DateFormatter()
             f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             if let d = f.date(from: resetsAt) { return d }
