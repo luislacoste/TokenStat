@@ -1,8 +1,16 @@
-import AppKit
+import Foundation
+import CGtk
+import CAppIndicator
 
-// main.swift always runs on the main thread — inform the compiler
-let app = NSApplication.shared
-app.setActivationPolicy(.accessory) // No dock icon
-let delegate = MainActor.assumeIsolated { AppDelegate() }
-app.delegate = delegate
-app.run()
+// Initialize GTK before any GTK calls.
+var argc = CommandLine.argc
+var argv = CommandLine.unsafeArgv
+gtk_init(&argc, &argv)
+
+// TrayController sets up the AppIndicator, connects ClaudeService, and starts polling.
+let tray = TrayController()
+
+// Block the main thread with GTK's event loop.
+// Swift async tasks run on the cooperative thread pool (background threads);
+// GTK UI updates are marshalled back via g_idle_add (see GtkHelpers.scheduleGtkUpdate).
+gtk_main()

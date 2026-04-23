@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 
 // MARK: - API response
 
@@ -9,8 +8,8 @@ struct OAuthUsageResponse: Decodable {
     let sevenDaySonnet: UsagePeriod?
 
     enum CodingKeys: String, CodingKey {
-        case fiveHour     = "five_hour"
-        case sevenDay     = "seven_day"
+        case fiveHour       = "five_hour"
+        case sevenDay       = "seven_day"
         case sevenDaySonnet = "seven_day_sonnet"
     }
 
@@ -36,10 +35,10 @@ struct OAuthUsageResponse: Decodable {
 // MARK: - App snapshot
 
 struct UsageSnapshot {
-    let fiveHourUtilization: Int      // 0–100
+    let fiveHourUtilization: Int
     let sevenDayUtilization: Int
     let sevenDaySonnetUtilization: Int?
-    let fiveHourResetIn: String?      // e.g. "2h 30m"
+    let fiveHourResetIn: String?
     let sevenDayResetIn: String?
     let lastUpdated: Date
 

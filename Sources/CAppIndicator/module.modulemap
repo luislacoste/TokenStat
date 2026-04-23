@@ -1,0 +1,4 @@
+module CAppIndicator [system] {
+    umbrella header "shim.h"
+    export *
+}
