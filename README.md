@@ -24,15 +24,22 @@ bash build.sh
 open TokenStat.app
 ```
 
+## Linux build & run
+
+```bash
+  sudo apt install libgtk-3-dev libayatana-appindicator3-dev libsecret-tools swift
+  bash build.sh
+```
+
 ## Versioning
 
 TokenStat uses **Semantic Versioning**: `MAJOR.MINOR.PATCH`
 
-| Number | When it changes | Example |
-|--------|----------------|---------|
-| **MAJOR** | A breaking change — the app works differently in a way that isn't backwards compatible, or a fundamental redesign | `1.x.x` → `2.0.0` |
+| Number    | When it changes                                                                                                            | Example           |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| **MAJOR** | A breaking change — the app works differently in a way that isn't backwards compatible, or a fundamental redesign          | `1.x.x` → `2.0.0` |
 | **MINOR** | A new feature added in a backwards-compatible way — something new you can use without changing how you already use the app | `1.0.x` → `1.1.0` |
-| **PATCH** | A bug fix or small improvement — behavior is corrected but nothing new is added | `1.0.0` → `1.0.1` |
+| **PATCH** | A bug fix or small improvement — behavior is corrected but nothing new is added                                            | `1.0.0` → `1.0.1` |
 
 Current version: **1.0.0**
 
@@ -40,5 +47,5 @@ Current version: **1.0.0**
 
 Made by Luis Lacoste
 
-- Instagram: [@luislacoste_](https://www.instagram.com/luislacoste_)
+- Instagram: [@luislacoste\_](https://www.instagram.com/luislacoste_)
 - GitHub: [luislacoste](https://github.com/luislacoste)
