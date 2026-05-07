@@ -48,6 +48,21 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Sign the app so macOS keychain remembers "Always Allow" across rebuilds.
+# Requires a "TokenStat" code-signing certificate in your login keychain.
+# Create it once: Keychain Access → Certificate Assistant → Create a Certificate
+#   Name: TokenStat | Identity Type: Self Signed Root | Type: Code Signing
+SIGN_IDENTITY="TokenStat"
+if security find-certificate -c "${SIGN_IDENTITY}" &>/dev/null; then
+    echo "Signing with '${SIGN_IDENTITY}'..."
+    codesign --force --deep --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}"
+else
+    echo "WARNING: No '${SIGN_IDENTITY}' certificate found — app won't be signed."
+    echo "macOS will re-prompt for keychain access after every rebuild."
+    echo "Fix: Keychain Access → Certificate Assistant → Create a Certificate"
+    echo "     Name: ${SIGN_IDENTITY} | Type: Self Signed Root | Code Signing"
+fi
+
 echo ""
 echo "Built: ${APP_BUNDLE}"
 echo ""
