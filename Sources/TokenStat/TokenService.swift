@@ -73,8 +73,15 @@ final class ClaudeService {
             return false
 
         } catch let err as NSError {
+            if err.code == 401 {
+                cachedToken = nil
+                clearSavedToken()   // force re-read from Claude Code's Keychain next cycle
+                lastError = "Auth token expired — will retry"
+                onUpdate?()
+                return false
+            }
             if err.code == 429 {
-                cachedToken = nil   // re-read keychain next time in case token refreshed
+                cachedToken = nil
                 lastError = "Rate limited — retrying in 15 min"
                 onUpdate?()
                 return true
@@ -89,7 +96,14 @@ final class ClaudeService {
 
     private func accessToken() throws -> String {
         if let t = cachedToken { return t }
+        // Try our own Keychain entry first — no macOS access prompt.
+        if let t = readSavedToken() {
+            cachedToken = t
+            return t
+        }
+        // Fall back to Claude Code's Keychain (prompts once; user clicks "Always Allow").
         let t = try readOAuthAccessToken()
+        saveToken(t)   // cache in our own entry so future launches skip the prompt
         cachedToken = t
         return t
     }
@@ -119,7 +133,53 @@ final class ClaudeService {
     }
 }
 
-// MARK: - Keychain helper
+// MARK: - TokenStat own Keychain (no permission prompts)
+
+private let kTSService = "TokenStat"
+private let kTSAccount = "oauth-token"
+
+private func readSavedToken() -> String? {
+    let q: [String: Any] = [
+        kSecClass as String:       kSecClassGenericPassword,
+        kSecAttrService as String: kTSService,
+        kSecAttrAccount as String: kTSAccount,
+        kSecReturnData as String:  true,
+        kSecMatchLimit as String:  kSecMatchLimitOne,
+    ]
+    var item: AnyObject?
+    guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess,
+          let data = item as? Data else { return nil }
+    return String(data: data, encoding: .utf8)
+}
+
+private func saveToken(_ token: String) {
+    guard let data = token.data(using: .utf8) else { return }
+    let base: [String: Any] = [
+        kSecClass as String:       kSecClassGenericPassword,
+        kSecAttrService as String: kTSService,
+        kSecAttrAccount as String: kTSAccount,
+    ]
+    let attrs: [String: Any] = [
+        kSecValueData as String:      data,
+        kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+    ]
+    var addQ = base; addQ.merge(attrs) { _, new in new }
+    let st = SecItemAdd(addQ as CFDictionary, nil)
+    if st == errSecDuplicateItem {
+        SecItemUpdate(base as CFDictionary, attrs as CFDictionary)
+    }
+}
+
+private func clearSavedToken() {
+    let q: [String: Any] = [
+        kSecClass as String:       kSecClassGenericPassword,
+        kSecAttrService as String: kTSService,
+        kSecAttrAccount as String: kTSAccount,
+    ]
+    SecItemDelete(q as CFDictionary)
+}
+
+// MARK: - Claude Code Keychain helper
 
 private struct KeychainCredentials: Decodable {
     let claudeAiOauth: OAuthData
