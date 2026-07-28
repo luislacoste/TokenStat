@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 // Reads Claude usage from the Anthropic OAuth API:
 //   GET https://api.anthropic.com/api/oauth/usage
@@ -74,8 +73,7 @@ final class ClaudeService {
 
         } catch let err as NSError {
             if err.code == 401 {
-                cachedToken = nil
-                clearSavedToken()   // force re-read from Claude Code's Keychain next cycle
+                cachedToken = nil   // re-read Claude Code's Keychain next cycle
                 lastError = "Auth token expired — will retry"
                 onUpdate?()
                 return false
@@ -96,14 +94,7 @@ final class ClaudeService {
 
     private func accessToken() throws -> String {
         if let t = cachedToken { return t }
-        // Try our own Keychain entry first — no macOS access prompt.
-        if let t = readSavedToken() {
-            cachedToken = t
-            return t
-        }
-        // Fall back to Claude Code's Keychain (prompts once; user clicks "Always Allow").
         let t = try readOAuthAccessToken()
-        saveToken(t)   // cache in our own entry so future launches skip the prompt
         cachedToken = t
         return t
     }
@@ -133,52 +124,6 @@ final class ClaudeService {
     }
 }
 
-// MARK: - TokenStat own Keychain (no permission prompts)
-
-private let kTSService = "TokenStat"
-private let kTSAccount = "oauth-token"
-
-private func readSavedToken() -> String? {
-    let q: [String: Any] = [
-        kSecClass as String:       kSecClassGenericPassword,
-        kSecAttrService as String: kTSService,
-        kSecAttrAccount as String: kTSAccount,
-        kSecReturnData as String:  true,
-        kSecMatchLimit as String:  kSecMatchLimitOne,
-    ]
-    var item: AnyObject?
-    guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess,
-          let data = item as? Data else { return nil }
-    return String(data: data, encoding: .utf8)
-}
-
-private func saveToken(_ token: String) {
-    guard let data = token.data(using: .utf8) else { return }
-    let base: [String: Any] = [
-        kSecClass as String:       kSecClassGenericPassword,
-        kSecAttrService as String: kTSService,
-        kSecAttrAccount as String: kTSAccount,
-    ]
-    let attrs: [String: Any] = [
-        kSecValueData as String:      data,
-        kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-    ]
-    var addQ = base; addQ.merge(attrs) { _, new in new }
-    let st = SecItemAdd(addQ as CFDictionary, nil)
-    if st == errSecDuplicateItem {
-        SecItemUpdate(base as CFDictionary, attrs as CFDictionary)
-    }
-}
-
-private func clearSavedToken() {
-    let q: [String: Any] = [
-        kSecClass as String:       kSecClassGenericPassword,
-        kSecAttrService as String: kTSService,
-        kSecAttrAccount as String: kTSAccount,
-    ]
-    SecItemDelete(q as CFDictionary)
-}
-
 // MARK: - Claude Code Keychain helper
 
 private struct KeychainCredentials: Decodable {
@@ -186,22 +131,30 @@ private struct KeychainCredentials: Decodable {
     struct OAuthData: Decodable { let accessToken: String }
 }
 
+// Reads the token via /usr/bin/security instead of SecItemCopyMatching.
+// Claude Code stores its credentials with that same binary, so `security`
+// is already on the keychain item's ACL — the read is always silent.
 private func readOAuthAccessToken() throws -> String {
-    var item: AnyObject?
-    let query: [String: Any] = [
-        kSecClass       as String: kSecClassGenericPassword,
-        kSecAttrService as String: "Claude Code-credentials",
-        kSecReturnData  as String: true,
-        kSecMatchLimit  as String: kSecMatchLimitOne
-    ]
-    let status = SecItemCopyMatching(query as CFDictionary, &item)
-    guard status == errSecSuccess, let data = item as? Data else {
-        throw NSError(domain: "Keychain", code: Int(status), userInfo: [
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+    proc.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
+    let out = Pipe()
+    proc.standardOutput = out
+    proc.standardError  = Pipe()
+    try proc.run()
+    proc.waitUntilExit()
+
+    let data = out.fileHandleForReading.readDataToEndOfFile()
+    guard proc.terminationStatus == 0,
+          let json = String(data: data, encoding: .utf8)?
+              .trimmingCharacters(in: .whitespacesAndNewlines),
+          !json.isEmpty else {
+        throw NSError(domain: "Keychain", code: Int(proc.terminationStatus), userInfo: [
             NSLocalizedDescriptionKey:
-                "Claude Code credentials not found in Keychain (OSStatus \(status)). " +
+                "Claude Code credentials not found in Keychain. " +
                 "Make sure Claude Code is installed and you are logged in."
         ])
     }
-    let creds = try JSONDecoder().decode(KeychainCredentials.self, from: data)
+    let creds = try JSONDecoder().decode(KeychainCredentials.self, from: Data(json.utf8))
     return creds.claudeAiOauth.accessToken
 }
