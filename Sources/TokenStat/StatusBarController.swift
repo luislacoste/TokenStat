@@ -80,9 +80,9 @@ final class StatusBarController {
         let activity = ActivityMonitor.shared.state
         let (dot, label): (NSColor, String) = {
             switch activity {
-            case .idle:    return (.systemRed,    "Idle")
-            case .working: return (.systemYellow, "Working…")
-            case .done:    return (.systemGreen,  "Done")
+            case .blocked: return (.systemRed,    "Waiting for permission")
+            case .working: return (.systemYellow, "Thinking…")
+            case .ready:   return (.systemGreen,  "Ready to prompt")
             }
         }()
         let actLine = NSMutableAttributedString()
@@ -223,9 +223,9 @@ final class StatusBarController {
 
         // ── Stoplight: red / yellow / green, active one lit ──
         let lights: [(NSColor, ClaudeActivity)] = [
-            (.systemRed,    .idle),
+            (.systemRed,    .blocked),
             (.systemYellow, .working),
-            (.systemGreen,  .done),
+            (.systemGreen,  .ready),
         ]
         for (i, (c, st)) in lights.enumerated() {
             let x  = CGFloat(i) * (lightD + lightGap)
