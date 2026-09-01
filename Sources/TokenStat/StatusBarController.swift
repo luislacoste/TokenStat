@@ -15,6 +15,8 @@ final class StatusBarController {
     private let sonnetSep    = NSMenuItem.separator()
     private let sonnetHeader = NSMenuItem()
     private let sonnetLine   = NSMenuItem()
+    // Claude activity
+    private let activityItem = NSMenuItem()
     // Meta
     private let updatedItem  = NSMenuItem()
 
@@ -23,7 +25,9 @@ final class StatusBarController {
         buildMenu()
         item.menu = menu
         ClaudeService.shared.onUpdate = { [weak self] in self?.render() }
+        ActivityMonitor.shared.onChange = { [weak self] in self?.render() }
         ClaudeService.shared.start()
+        ActivityMonitor.shared.start()
         render()
     }
 
@@ -31,6 +35,9 @@ final class StatusBarController {
 
     private func buildMenu() {
         func display(_ mi: NSMenuItem) { mi.isEnabled = false; menu.addItem(mi) }
+
+        display(activityItem)
+        menu.addItem(.separator())
 
         display(fiveHourHeader)
         display(fiveHourLine)
@@ -68,6 +75,25 @@ final class StatusBarController {
 
     private func render() {
         let svc = ClaudeService.shared
+
+        // ── Claude activity (stoplight) ────────────────────
+        let activity = ActivityMonitor.shared.state
+        let (dot, label): (NSColor, String) = {
+            switch activity {
+            case .idle:    return (.systemRed,    "Idle")
+            case .working: return (.systemYellow, "Working…")
+            case .done:    return (.systemGreen,  "Done")
+            }
+        }()
+        let actLine = NSMutableAttributedString()
+        actLine.append(NSAttributedString(string: "● ", attributes: [
+            .foregroundColor: dot,
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+        ]))
+        actLine.append(NSAttributedString(string: "Claude Code: \(label)", attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+        ]))
+        activityItem.attributedTitle = actLine
 
         guard svc.lastError == nil else {
             setIcon(fraction: 0, color: .secondaryLabelColor)
@@ -178,25 +204,52 @@ final class StatusBarController {
     // MARK: - Icon
 
     private func setIcon(fraction: Double, color: NSColor) {
-        item.button?.image = drawBar(fraction: fraction, fill: color)
+        item.button?.image = drawIcon(fraction: fraction, fill: color,
+                                      activity: ActivityMonitor.shared.state)
         item.button?.title = ""
         item.button?.imageScaling = .scaleProportionallyDown
     }
 
-    private func drawBar(fraction: Double, fill: NSColor) -> NSImage {
-        let W: CGFloat = 46, H: CGFloat = 18, bH: CGFloat = 8, r: CGFloat = 2.5
+    private func drawIcon(fraction: Double, fill: NSColor,
+                          activity: ClaudeActivity) -> NSImage {
+        let lightD: CGFloat = 6.5, lightGap: CGFloat = 3, pad: CGFloat = 6
+        let lightsW = 3 * lightD + 2 * lightGap
+        let barW: CGFloat = 46, H: CGFloat = 18, bH: CGFloat = 8, r: CGFloat = 2.5
+        let W = lightsW + pad + barW
+
         let img = NSImage(size: NSSize(width: W, height: H))
         img.lockFocus()
         defer { img.unlockFocus() }
 
-        let rect = NSRect(x: 1, y: (H - bH) / 2, width: W - 2, height: bH)
+        // ── Stoplight: red / yellow / green, active one lit ──
+        let lights: [(NSColor, ClaudeActivity)] = [
+            (.systemRed,    .idle),
+            (.systemYellow, .working),
+            (.systemGreen,  .done),
+        ]
+        for (i, (c, st)) in lights.enumerated() {
+            let x  = CGFloat(i) * (lightD + lightGap)
+            let on = activity == st
+            let dot = NSRect(x: x, y: (H - lightD) / 2, width: lightD, height: lightD)
+            c.withAlphaComponent(on ? 1.0 : 0.18).setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            if on {
+                c.withAlphaComponent(0.35).setStroke()
+                let halo = NSBezierPath(ovalIn: dot.insetBy(dx: -1.5, dy: -1.5))
+                halo.lineWidth = 1; halo.stroke()
+            }
+        }
+
+        // ── Usage bar ─────────────────────────────────────────
+        let bx = lightsW + pad
+        let rect = NSRect(x: bx, y: (H - bH) / 2, width: barW - 2, height: bH)
         NSColor.secondaryLabelColor.withAlphaComponent(0.18).setFill()
         NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
 
         if fraction > 0 {
-            let fw = max(bH, (W - 2) * CGFloat(fraction))
+            let fw = max(bH, (barW - 2) * CGFloat(fraction))
             fill.setFill()
-            NSBezierPath(roundedRect: NSRect(x: 1, y: rect.minY, width: fw, height: bH),
+            NSBezierPath(roundedRect: NSRect(x: bx, y: rect.minY, width: fw, height: bH),
                          xRadius: r, yRadius: r).fill()
         }
 
