@@ -25,6 +25,7 @@ final class ActivityMonitor {
     // Tail classification cache — only re-read the file when it changed.
     private var cachedTail: (url: URL, mtime: Date, tail: SessionTail)?
     private nonisolated static let workingWindow: TimeInterval = 20
+    private nonisolated static let promptWindow:  TimeInterval = 2 * 60
     private nonisolated static let staleWindow:   TimeInterval = 30 * 60
 
     func start() {
@@ -68,9 +69,13 @@ final class ActivityMonitor {
         switch tail {
         case .turnComplete:      return .ready    // final text written → green immediately
         case .pendingToolResult: return .working  // Claude is composing the next step
+        case .thinking:          return .working  // mid-turn reasoning
         case .pendingToolUse:
             // Recent → the tool is just executing; quiet too long → permission prompt.
             return age <= Self.workingWindow ? .working : .blocked
+        case .userPrompt:
+            // Prompt sent, first response not written yet. Long silence → interrupted.
+            return age <= Self.promptWindow ? .working : .ready
         case .unknown:
             return age <= Self.workingWindow ? .working : .ready
         }
@@ -95,35 +100,55 @@ final class ActivityMonitor {
     // MARK: - Last JSONL entry classification
 
     private enum SessionTail {
-        case pendingToolUse     // assistant message ending in tool_use, unanswered
-        case pendingToolResult  // user message carrying a tool_result
-        case turnComplete       // assistant message with plain text only
+        case pendingToolUse     // assistant tool call, unanswered
+        case pendingToolResult  // tool result arrived, next message pending
+        case thinking           // assistant thinking block, turn still going
+        case turnComplete       // assistant message with final text
+        case userPrompt         // user just sent a prompt, no response yet
         case unknown
     }
 
+    // Walks the file tail backwards, skipping bookkeeping entries (attachment,
+    // system, file-history-snapshot, ai-title, mode, …) until it finds a real
+    // assistant/user message to classify.
     private nonisolated static func lastEntry(of url: URL) -> SessionTail {
-        guard let line = lastNonEmptyLine(of: url),
-              let data = line.data(using: .utf8),
-              let obj  = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return .unknown }
+        for line in tailLines(of: url).reversed() {
+            guard let data = line.data(using: .utf8),
+                  let obj  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = obj["type"] as? String
+            else { continue }
 
-        let type    = obj["type"] as? String
-        let message = obj["message"] as? [String: Any]
-        let content = message?["content"] as? [[String: Any]] ?? []
-        let kinds   = Set(content.compactMap { $0["type"] as? String })
+            let message = obj["message"] as? [String: Any]
+            let content = message?["content"]
+            let kinds: Set<String>
+            if let items = content as? [[String: Any]] {
+                kinds = Set(items.compactMap { $0["type"] as? String })
+            } else if content is String {
+                kinds = ["text"]
+            } else {
+                kinds = []
+            }
 
-        if type == "assistant" {
-            return kinds.contains("tool_use") ? .pendingToolUse : .turnComplete
-        }
-        if type == "user" && kinds.contains("tool_result") {
-            return .pendingToolResult
+            switch type {
+            case "assistant":
+                if kinds.contains("tool_use")  { return .pendingToolUse }
+                if kinds.contains("text")      { return .turnComplete }
+                if kinds.contains("thinking")  { return .thinking }
+                return .unknown
+            case "user":
+                if kinds.contains("tool_result") { return .pendingToolResult }
+                if kinds.contains("text")        { return .userPrompt }
+                return .unknown
+            default:
+                continue   // bookkeeping entry — keep walking back
+            }
         }
         return .unknown
     }
 
-    /// Reads the tail of the file (up to 256 KB) and returns its last non-empty line.
-    private nonisolated static func lastNonEmptyLine(of url: URL) -> String? {
-        guard let fh = try? FileHandle(forReadingFrom: url) else { return nil }
+    /// Reads the tail of the file (up to 256 KB) and returns its non-empty lines.
+    private nonisolated static func tailLines(of url: URL) -> [String] {
+        guard let fh = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? fh.close() }
 
         let size = (try? fh.seekToEnd()) ?? 0
@@ -131,9 +156,9 @@ final class ActivityMonitor {
         let offset = size > chunk ? size - chunk : 0
         try? fh.seek(toOffset: offset)
         guard let data = try? fh.readToEnd(),
-              let text = String(data: data, encoding: .utf8) else { return nil }
+              let text = String(data: data, encoding: .utf8) else { return [] }
 
         return text.split(separator: "\n", omittingEmptySubsequences: true)
-            .last.map(String.init)
+            .map(String.init)
     }
 }
