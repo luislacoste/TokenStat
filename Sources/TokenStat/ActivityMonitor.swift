@@ -22,12 +22,14 @@ final class ActivityMonitor {
     var onChange: (() -> Void)?
 
     private var timer: Timer?
+    // Tail classification cache — only re-read the file when it changed.
+    private var cachedTail: (url: URL, mtime: Date, tail: SessionTail)?
     private nonisolated static let workingWindow: TimeInterval = 20
     private nonisolated static let staleWindow:   TimeInterval = 30 * 60
 
     func start() {
         timer?.invalidate()
-        let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
         RunLoop.main.add(t, forMode: .common)   // keep ticking while the menu is open
@@ -38,7 +40,7 @@ final class ActivityMonitor {
     func stop() { timer?.invalidate() }
 
     private func tick() {
-        let new = Self.currentState()
+        let new = currentState()
         if new != state {
             state = new
             onChange?()
@@ -47,20 +49,30 @@ final class ActivityMonitor {
 
     // MARK: - State detection
 
-    private nonisolated static func currentState() -> ClaudeActivity {
+    private func currentState() -> ClaudeActivity {
         let projects = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
-        guard let (url, mtime) = newestSession(in: projects) else { return .ready }
+        guard let (url, mtime) = Self.newestSession(in: projects) else { return .ready }
 
         let age = Date().timeIntervalSince(mtime)
-        if age > staleWindow  { return .ready }        // long-abandoned session
-        if age <= workingWindow { return .working }    // actively streaming
+        if age > Self.staleWindow { return .ready }    // long-abandoned session
 
-        // Quiet for a while — inspect the last entry to see why.
-        switch lastEntry(of: url) {
-        case .pendingToolUse:  return .blocked   // tool call sent, no result → permission prompt
-        case .pendingToolResult: return .working // result arrived, Claude is composing the next step
-        case .turnComplete, .unknown: return .ready
+        let tail: SessionTail
+        if let c = cachedTail, c.url == url, c.mtime == mtime {
+            tail = c.tail
+        } else {
+            tail = Self.lastEntry(of: url)
+            cachedTail = (url, mtime, tail)
+        }
+
+        switch tail {
+        case .turnComplete:      return .ready    // final text written → green immediately
+        case .pendingToolResult: return .working  // Claude is composing the next step
+        case .pendingToolUse:
+            // Recent → the tool is just executing; quiet too long → permission prompt.
+            return age <= Self.workingWindow ? .working : .blocked
+        case .unknown:
+            return age <= Self.workingWindow ? .working : .ready
         }
     }
 
