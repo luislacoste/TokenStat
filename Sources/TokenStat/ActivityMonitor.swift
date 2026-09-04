@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 // Watches ~/.claude/projects/**/*.jsonl — Claude Code appends to the active
 // session file while it works. State is derived from the newest file:
@@ -20,6 +21,12 @@ final class ActivityMonitor {
 
     private(set) var state: ClaudeActivity = .ready
     var onChange: (() -> Void)?
+
+    // Optional: post a macOS notification each time Claude Code turns ready (green).
+    var notifyOnReady: Bool {
+        get { UserDefaults.standard.bool(forKey: "notify_on_ready") }
+        set { UserDefaults.standard.set(newValue, forKey: "notify_on_ready") }
+    }
 
     private var timer: Timer?
     // Tail classification cache — only re-read the file when it changed.
@@ -43,14 +50,43 @@ final class ActivityMonitor {
     private func tick() {
         let new = currentState()
         if new != state {
+            let previous = state
             state = new
             onChange?()
+            if new == .ready, previous != .ready {
+                if notifyOnReady { notifyReady() }
+                TelegramNotifier.sendReadyMessage()
+            }
         }
+    }
+
+    private func notifyReady() {
+        let content = UNMutableNotificationContent()
+        content.title = "Claude Code"
+        content.body  = "Ready for your next prompt"
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "tokenstat.ready.\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 
     // MARK: - State detection
 
     private func currentState() -> ClaudeActivity {
+        // Marker written by a Claude Code Notification hook the moment a
+        // permission prompt appears (and removed by PreToolUse/UserPromptSubmit/
+        // Stop hooks when it's resolved). Instant and unambiguous → red.
+        let marker = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/.tokenstat-blocked")
+        if let m = (try? marker.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate,
+           Date().timeIntervalSince(m) < Self.staleWindow {
+            return .blocked
+        }
+
         let projects = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
         guard let (url, mtime) = Self.newestSession(in: projects) else { return .ready }

@@ -12,6 +12,10 @@ Reads directly from the Anthropic OAuth API using the credentials stored by Clau
 
 Each section shows a color-coded progress bar (green → red) and a countdown to the next reset.
 
+## Optional: Telegram notifications
+
+TokenStat can message you on Telegram when Claude Code turns ready. See [TELEGRAM.md](TELEGRAM.md) for setup.
+
 ## Requirements
 
 - macOS 13 or later
