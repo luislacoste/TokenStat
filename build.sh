@@ -2,7 +2,12 @@
 # Builds TokenStat for Ubuntu/Linux and installs to ~/.local/bin
 #
 # Prerequisites (run once):
-#   sudo apt install libgtk-3-dev libayatana-appindicator3-dev libsecret-tools swift
+#   sudo apt install libgtk-3-dev libayatana-appindicator3-dev libsecret-tools libnotify-bin
+#   # Install the Swift toolchain from https://www.swift.org/install/linux/ —
+#   # the "swift" apt package is OpenStack Swift, not the Swift compiler.
+#
+# libnotify-bin provides notify-send, used for the optional "Claude Code is
+# ready" desktop notification — it ships preinstalled on most GNOME desktops.
 #
 # Usage:
 #   bash build.sh

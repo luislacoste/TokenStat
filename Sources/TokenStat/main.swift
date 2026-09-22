@@ -4,7 +4,9 @@ import CAppIndicator
 
 // Initialize GTK before any GTK calls.
 var argc = CommandLine.argc
-var argv = CommandLine.unsafeArgv
+// gtk_init expects char*** with an optional middle pointer level;
+// CommandLine.unsafeArgv is non-optional there, so re-type explicitly.
+var argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>? = CommandLine.unsafeArgv
 gtk_init(&argc, &argv)
 
 // TrayController sets up the AppIndicator, connects ClaudeService, and starts polling.

@@ -22,6 +22,27 @@ final class Config {
         set { data["refresh_interval"] = max(1, min(60, newValue)); save() }
     }
 
+    // Notify via desktop notification when Claude Code turns ready (green).
+    var notifyOnReady: Bool {
+        get { (data["notify_on_ready"] as? Bool) ?? false }
+        set { data["notify_on_ready"] = newValue; save() }
+    }
+
+    var telegramEnabled: Bool {
+        get { (data["telegram_notify_on_ready"] as? Bool) ?? false }
+        set { data["telegram_notify_on_ready"] = newValue; save() }
+    }
+
+    var telegramBotToken: String {
+        get { (data["telegram_bot_token"] as? String) ?? "" }
+        set { data["telegram_bot_token"] = newValue; save() }
+    }
+
+    var telegramChatID: String {
+        get { (data["telegram_chat_id"] as? String) ?? "" }
+        set { data["telegram_chat_id"] = newValue; save() }
+    }
+
     private func load() {
         guard let raw  = try? Data(contentsOf: path),
               let json = try? JSONSerialization.jsonObject(with: raw) as? [String: Any]

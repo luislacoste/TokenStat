@@ -1,3 +1,4 @@
+import Foundation
 import CGtk
 import CAppIndicator
 
@@ -10,6 +11,7 @@ final class TrayController {
     private var menu:      OpaquePointer?
 
     // Display-only menu items (not clickable)
+    private var activityLabel:      OpaquePointer?
     private var fiveHourHeaderItem: OpaquePointer?
     private var fiveHourBarItem:    OpaquePointer?
     private var sevenDayHeaderItem: OpaquePointer?
@@ -24,7 +26,7 @@ final class TrayController {
 
         // "system-run" is available on all Ubuntu/GNOME systems.
         // The percentage label next to it gives the at-a-glance status.
-        indicator = app_indicator_new(
+        indicator = appIndicatorNew(
             "tokenstat",
             "system-run",
             APP_INDICATOR_CATEGORY_APPLICATION_STATUS
@@ -34,14 +36,19 @@ final class TrayController {
         app_indicator_set_menu(indicator, menu)
 
         ClaudeService.shared.onUpdate = { [unowned self] in self.render() }
+        ActivityMonitor.shared.onChange = { [unowned self] in self.render() }
         ClaudeService.shared.start()
+        ActivityMonitor.shared.start()
         render()
     }
 
     // MARK: - Menu construction
 
     private func buildMenu() {
-        menu = gtk_menu_new()
+        menu = gtkMenuNew()
+
+        activityLabel = displayMarkup("Claude Code: Ready to prompt")
+        separator()
 
         fiveHourHeaderItem = display("Current Session")
         fiveHourBarItem    = display("  Updating…")
@@ -66,6 +73,7 @@ final class TrayController {
         separator()
         action("Quit TokenStat") {
             ClaudeService.shared.stop()
+            ActivityMonitor.shared.stop()
             gtk_main_quit()
         }
 
@@ -74,21 +82,37 @@ final class TrayController {
 
     @discardableResult
     private func display(_ label: String) -> OpaquePointer? {
-        let item = gtk_menu_item_new_with_label(label)
+        let item = gtkMenuItemNewWithLabel(label)
         gtk_widget_set_sensitive(item, 0)
         gtk_menu_shell_append(menu, item)
         return item
     }
 
+    /// A display-only item whose child is a plain GtkLabel with Pango markup
+    /// enabled, so its text can carry color (e.g. the activity dot). Returns
+    /// the label itself — update it with gtk_label_set_markup, not
+    /// gtk_menu_item_set_label (that API only understands plain-label items).
+    @discardableResult
+    private func displayMarkup(_ markup: String) -> OpaquePointer? {
+        let item = gtkMenuItemNew()
+        gtk_widget_set_sensitive(item, 0)
+        let label = gtkLabelNew(nil)
+        gtk_label_set_markup(label, markup)
+        gtk_label_set_xalign(label, 0)
+        gtk_container_add(item, label)
+        gtk_menu_shell_append(menu, item)
+        return label
+    }
+
     @discardableResult
     private func separator() -> OpaquePointer? {
-        let sep = gtk_separator_menu_item_new()
+        let sep = gtkSeparatorMenuItemNew()
         gtk_menu_shell_append(menu, sep)
         return sep
     }
 
     private func action(_ label: String, block: @escaping () -> Void) {
-        let item = gtk_menu_item_new_with_label(label)
+        let item = gtkMenuItemNewWithLabel(label)
         connectSignal(item, signal: "activate", block: block)
         gtk_menu_shell_append(menu, item)
     }
@@ -97,6 +121,18 @@ final class TrayController {
 
     func render() {
         let svc = ClaudeService.shared
+
+        // ── Claude activity (stoplight) ────────────────────
+        let activity = ActivityMonitor.shared.state
+        let (dotColor, activityLabelText): (String, String) = {
+            switch activity {
+            case .blocked: return ("#e01b24", "Waiting for permission")
+            case .working: return ("#f5c211", "Thinking…")
+            case .ready:   return ("#26a269", "Ready to prompt")
+            }
+        }()
+        gtk_label_set_markup(activityLabel,
+            "<span foreground='\(dotColor)'>●</span>  Claude Code: \(activityLabelText)")
 
         guard svc.lastError == nil else {
             setLabel(fiveHourHeaderItem, "Current Session")

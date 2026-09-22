@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // Polls the Anthropic OAuth usage API every N minutes.
 // On Linux, credentials are read via `secret-tool` (libsecret) with a
