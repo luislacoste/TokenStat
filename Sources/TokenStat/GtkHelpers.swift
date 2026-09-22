@@ -280,6 +280,14 @@ func app_indicator_set_menu(_ indicator: OpaquePointer?, _ menu: OpaquePointer?)
     CAppIndicator.app_indicator_set_menu(bridge(indicator), bridge(menu))
 }
 
+func app_indicator_set_icon(_ indicator: OpaquePointer?, _ iconName: String) {
+    CAppIndicator.app_indicator_set_icon(bridge(indicator), iconName)
+}
+
+func app_indicator_set_icon_theme_path(_ indicator: OpaquePointer?, _ path: String) {
+    CAppIndicator.app_indicator_set_icon_theme_path(bridge(indicator), path)
+}
+
 func app_indicator_set_status(_ indicator: OpaquePointer?, _ status: AppIndicatorStatus) {
     CAppIndicator.app_indicator_set_status(bridge(indicator), status)
 }

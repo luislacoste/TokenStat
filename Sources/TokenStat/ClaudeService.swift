@@ -161,6 +161,7 @@ private func readViaSecretTool() throws -> String {
 private func readFromFile() throws -> String {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     let candidates = [
+        "\(home)/.claude/.credentials.json",
         "\(home)/.config/claude/credentials",
         "\(home)/.config/claude/credentials.json",
         "\(home)/.config/@anthropic-ai/claude/credentials",

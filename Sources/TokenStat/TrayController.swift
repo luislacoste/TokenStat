@@ -21,18 +21,27 @@ final class TrayController {
     private var sonnetBarItem:      OpaquePointer?
     private var updatedItem:        OpaquePointer?
 
+    // Two alternating file names so app_indicator_set_icon always points at a
+    // path GTK's icon theme cache hasn't already resolved with this content —
+    // reusing one fixed name risks a stale cached image on some hosts.
+    private let iconDir: String = {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cache/tokenstat/icons").path
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+    private var iconToggle = false
+
     init() {
         buildMenu()
 
-        // "system-run" is available on all Ubuntu/GNOME systems.
-        // The percentage label next to it gives the at-a-glance status.
         indicator = appIndicatorNew(
             "tokenstat",
-            "system-run",
+            "tokenstat-icon-a",
             APP_INDICATOR_CATEGORY_APPLICATION_STATUS
         )
+        app_indicator_set_icon_theme_path(indicator, iconDir)
         app_indicator_set_status(indicator, APP_INDICATOR_STATUS_ACTIVE)
-        app_indicator_set_label(indicator, "–%", "100%")
         app_indicator_set_menu(indicator, menu)
 
         ClaudeService.shared.onUpdate = { [unowned self] in self.render() }
@@ -141,13 +150,14 @@ final class TrayController {
             setLabel(sevenDayBarItem,    "")
             showSonnet(false)
             setLabel(updatedItem, "")
-            app_indicator_set_label(indicator, "ERR", "ERR")
+            setIcon(fraction: 0, activity: activity)
             return
         }
 
         let snap    = svc.snapshot
         let fivePct = snap.fiveHourUtilization
         let sevenPct = snap.sevenDayUtilization
+        setIcon(fraction: Double(fivePct) / 100.0, activity: activity)
 
         setLabel(fiveHourHeaderItem, "Current Session")
         setLabel(fiveHourBarItem,    barLine(pct: fivePct,  resetIn: snap.fiveHourResetIn))
@@ -167,8 +177,6 @@ final class TrayController {
         fmt.timeStyle = .short
         fmt.dateStyle = .none
         setLabel(updatedItem, "  Updated \(fmt.string(from: snap.lastUpdated))")
-
-        app_indicator_set_label(indicator, "\(fivePct)%", "100%")
     }
 
     private func showSonnet(_ visible: Bool) {
@@ -196,6 +204,105 @@ final class TrayController {
         var s = "  [\(String(repeating: "█", count: filled))\(String(repeating: "░", count: empty))]  \(pct)%"
         if let r = resetIn { s += "  ·  \(r) till reset" }
         return s
+    }
+
+    // MARK: - Icon (drawn with Cairo — stoplight dots + usage bar, mirroring
+    // the macOS build's custom NSImage icon)
+
+    private func setIcon(fraction: Double, activity: ClaudeActivity) {
+        let name = drawIcon(fraction: fraction, activity: activity)
+        app_indicator_set_icon(indicator, name)
+    }
+
+    private func drawIcon(fraction: Double, activity: ClaudeActivity) -> String {
+        let lightD: Double = 7, lightGap: Double = 3, pad: Double = 4
+        let lightsW = 3 * lightD + 2 * lightGap
+        let barW: Double = 46, H: Double = 18, bH: Double = 8, r: Double = 2.5
+        let W = lightsW + pad + barW
+
+        let surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+                                                   Int32(W.rounded(.up)),
+                                                   Int32(H.rounded(.up)))
+        let cr = cairo_create(surface)
+
+        // ── Stoplight: red / yellow / green, active one lit ──
+        let lights: [(Double, Double, Double, ClaudeActivity)] = [
+            (0.87, 0.19, 0.19, .blocked),
+            (0.90, 0.71, 0.13, .working),
+            (0.22, 0.62, 0.38, .ready),
+        ]
+        for (i, (rC, gC, bC, state)) in lights.enumerated() {
+            let cx = Double(i) * (lightD + lightGap) + lightD / 2
+            let cy = H / 2
+            let on = activity == state
+            cairo_set_source_rgba(cr, rC, gC, bC, on ? 0.95 : 0.17)
+            cairo_arc(cr, cx, cy, lightD / 2, 0, 2 * Double.pi)
+            cairo_fill(cr)
+        }
+
+        // ── Usage bar ─────────────────────────────────────────
+        let bx = lightsW + pad
+        let by = (H - bH) / 2
+        let bw = barW - 1
+
+        cairo_set_source_rgba(cr, 0.6, 0.6, 0.6, 0.17)
+        roundedRect(cr, x: bx, y: by, w: bw, h: bH, r: r)
+        cairo_fill(cr)
+
+        if fraction > 0 {
+            let fw = max(bH, bw * min(1, fraction))
+            let (fr, fg, fb) = barColor(for: fraction)
+            cairo_set_source_rgba(cr, fr, fg, fb, 0.95)
+            roundedRect(cr, x: bx, y: by, w: fw, h: bH, r: r)
+            cairo_fill(cr)
+        }
+
+        cairo_set_source_rgba(cr, 0.6, 0.6, 0.6, 0.3)
+        cairo_set_line_width(cr, 0.5)
+        roundedRect(cr, x: bx, y: by, w: bw, h: bH, r: r)
+        cairo_stroke(cr)
+
+        cairo_destroy(cr)
+
+        let name = iconToggle ? "tokenstat-icon-b" : "tokenstat-icon-a"
+        iconToggle.toggle()
+        cairo_surface_write_to_png(surface, "\(iconDir)/\(name).png")
+        cairo_surface_destroy(surface)
+        return name
+    }
+
+    private func roundedRect(_ cr: OpaquePointer?, x: Double, y: Double, w: Double, h: Double, r: Double) {
+        let r = min(r, min(w, h) / 2)
+        cairo_new_sub_path(cr)
+        cairo_arc(cr, x + w - r, y + r,     r, -Double.pi / 2, 0)
+        cairo_arc(cr, x + w - r, y + h - r, r, 0, Double.pi / 2)
+        cairo_arc(cr, x + r,     y + h - r, r, Double.pi / 2, Double.pi)
+        cairo_arc(cr, x + r,     y + r,     r, Double.pi, 3 * Double.pi / 2)
+        cairo_close_path(cr)
+    }
+
+    /// Smoothly interpolates green → yellow → red via HSB hue (120° → 0°),
+    /// matching the macOS build's coloring.
+    private func barColor(for fraction: Double) -> (Double, Double, Double) {
+        let t = max(0.0, min(1.0, fraction))
+        let hue = (1.0 - t) * (120.0 / 360.0)
+        return hsbToRgb(h: hue, s: 0.72, v: 0.88)
+    }
+
+    private func hsbToRgb(h: Double, s: Double, v: Double) -> (Double, Double, Double) {
+        let i = Int(h * 6) % 6
+        let f = h * 6 - Double(Int(h * 6))
+        let p = v * (1 - s)
+        let q = v * (1 - f * s)
+        let t = v * (1 - (1 - f) * s)
+        switch i {
+        case 0:  return (v, t, p)
+        case 1:  return (q, v, p)
+        case 2:  return (p, v, t)
+        case 3:  return (p, q, v)
+        case 4:  return (t, p, v)
+        default: return (v, p, q)
+        }
     }
 }
 
