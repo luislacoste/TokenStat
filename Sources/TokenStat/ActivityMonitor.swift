@@ -105,8 +105,13 @@ final class ActivityMonitor {
         case .pendingToolResult: return .working  // Claude is composing the next step
         case .thinking:          return .working  // mid-turn reasoning
         case .pendingToolUse:
-            // Recent → the tool is just executing; quiet too long → permission prompt.
-            return age <= Self.workingWindow ? .working : .blocked
+            // A tool call with no result yet just means it's still running —
+            // that's equally true for a slow-but-approved command as for one
+            // stuck on a permission prompt, so age alone can't tell them
+            // apart. Real blocking is reported by the marker check above
+            // (driven by the Notification hook); don't guess "blocked" here
+            // purely from silence, or long-but-harmless commands flip red.
+            return .working
         case .userPrompt:
             // Prompt sent, first response not written yet. Long silence → interrupted.
             return age <= Self.promptWindow ? .working : .ready
