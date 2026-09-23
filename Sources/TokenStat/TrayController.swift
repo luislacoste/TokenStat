@@ -245,7 +245,7 @@ final class TrayController {
         // ── Stoplight: red / yellow / green, active one lit ──
         let lights: [(Double, Double, Double, ClaudeActivity)] = [
             (0.87, 0.19, 0.19, .blocked),
-            (0.90, 0.71, 0.13, .working),
+            (0.95, 0.82, 0.10, .working),
             (0.22, 0.62, 0.38, .ready),
         ]
         for (i, (rC, gC, bC, state)) in lights.enumerated() {
