@@ -60,15 +60,15 @@ final class TrayController {
         separator()
 
         fiveHourHeaderItem = display("Current Session")
-        fiveHourBarItem    = display("  Updating…")
+        fiveHourBarItem    = displayMarkup("  Updating…")
         separator()
 
         sevenDayHeaderItem = display("7-Day Window")
-        sevenDayBarItem    = display("  Updating…")
+        sevenDayBarItem    = displayMarkup("  Updating…")
 
         sonnetSepItem    = separator()
         sonnetHeaderItem = display("7-Day Sonnet")
-        sonnetBarItem    = display("  Updating…")
+        sonnetBarItem    = displayMarkup("  Updating…")
 
         separator()
         updatedItem = display("")
@@ -132,22 +132,26 @@ final class TrayController {
         let svc = ClaudeService.shared
 
         // ── Claude activity (stoplight) ────────────────────
+        // AppIndicator exports this menu over DBusMenu (consumed natively by
+        // GNOME Shell, not rendered through GTK), which carries plain text
+        // only — Pango markup/span colors are silently dropped. Colored
+        // square/circle emoji carry their own color from the font glyph
+        // itself, so they're the only way to get real color into this menu.
         let activity = ActivityMonitor.shared.state
-        let (dotColor, activityLabelText): (String, String) = {
+        let (dot, activityLabelText): (String, String) = {
             switch activity {
-            case .blocked: return ("#e01b24", "Waiting for permission")
-            case .working: return ("#f5c211", "Thinking…")
-            case .ready:   return ("#26a269", "Ready to prompt")
+            case .blocked: return ("🔴", "Waiting for permission")
+            case .working: return ("🟡", "Thinking…")
+            case .ready:   return ("🟢", "Ready to prompt")
             }
         }()
-        gtk_label_set_markup(activityLabel,
-            "<span foreground='\(dotColor)'>●</span>  Claude Code: \(activityLabelText)")
+        gtk_label_set_text(activityLabel, "\(dot)  Claude Code: \(activityLabelText)")
 
         guard svc.lastError == nil else {
             setLabel(fiveHourHeaderItem, "Current Session")
-            setLabel(fiveHourBarItem,    "  \(svc.lastError!)")
+            gtk_label_set_text(fiveHourBarItem, "  \(svc.lastError!)")
             setLabel(sevenDayHeaderItem, "7-Day Window")
-            setLabel(sevenDayBarItem,    "")
+            gtk_label_set_text(sevenDayBarItem, "")
             showSonnet(false)
             setLabel(updatedItem, "")
             setIcon(fraction: 0, activity: activity)
@@ -160,15 +164,15 @@ final class TrayController {
         setIcon(fraction: Double(fivePct) / 100.0, activity: activity)
 
         setLabel(fiveHourHeaderItem, "Current Session")
-        setLabel(fiveHourBarItem,    barLine(pct: fivePct,  resetIn: snap.fiveHourResetIn))
+        gtk_label_set_text(fiveHourBarItem, barLine(pct: fivePct, resetIn: snap.fiveHourResetIn))
 
         setLabel(sevenDayHeaderItem, "7-Day Window")
-        setLabel(sevenDayBarItem,    barLine(pct: sevenPct, resetIn: snap.sevenDayResetIn))
+        gtk_label_set_text(sevenDayBarItem, barLine(pct: sevenPct, resetIn: snap.sevenDayResetIn))
 
         if let sonnetPct = snap.sevenDaySonnetUtilization {
             showSonnet(true)
             setLabel(sonnetHeaderItem, "7-Day Sonnet")
-            setLabel(sonnetBarItem,    barLine(pct: sonnetPct, resetIn: nil))
+            gtk_label_set_text(sonnetBarItem, barLine(pct: sonnetPct, resetIn: nil))
         } else {
             showSonnet(false)
         }
@@ -197,13 +201,26 @@ final class TrayController {
 
     // MARK: - Progress bar text
 
+    /// Built from colored square emoji rather than Pango markup — DBusMenu
+    /// (see the note in render()) carries plain text only.
     private func barLine(pct: Int, resetIn: String?) -> String {
-        let width  = 24
+        let width  = 12
         let filled = max(0, min(width, Int((Double(pct) / 100.0 * Double(width)).rounded())))
         let empty  = width - filled
-        var s = "  [\(String(repeating: "█", count: filled))\(String(repeating: "░", count: empty))]  \(pct)%"
+
+        var s = "  \(String(repeating: colorSquare(for: pct), count: filled))"
+        s += "\(String(repeating: "⬜", count: empty))  \(pct)%"
         if let r = resetIn { s += "  ·  \(r) till reset" }
         return s
+    }
+
+    private func colorSquare(for pct: Int) -> String {
+        switch pct {
+        case ..<50: return "🟩"
+        case ..<75: return "🟨"
+        case ..<90: return "🟧"
+        default:    return "🟥"
+        }
     }
 
     // MARK: - Icon (drawn with Cairo — stoplight dots + usage bar, mirroring
