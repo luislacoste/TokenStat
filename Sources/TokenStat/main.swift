@@ -1,6 +1,19 @@
 import Foundation
+import Glibc
 import CGtk
 import CAppIndicator
+
+// Single-instance guard — avoids a duplicate tray icon if TokenStat is
+// launched again (e.g. from the app grid) while an instance from autostart
+// is already running. flock is released automatically when the process exits.
+let lockDir = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".cache/tokenstat").path
+try? FileManager.default.createDirectory(atPath: lockDir, withIntermediateDirectories: true)
+let lockFD = open(lockDir + "/tokenstat.lock", O_CREAT | O_RDWR, 0o644)
+if lockFD == -1 || flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+    FileHandle.standardError.write("TokenStat is already running.\n".data(using: .utf8)!)
+    exit(0)
+}
 
 // Initialize GTK before any GTK calls.
 var argc = CommandLine.argc
