@@ -1,5 +1,4 @@
 import AppKit
-import UserNotifications
 
 // Watches ~/.claude/projects/**/*.jsonl — Claude Code appends to the active
 // session file while it works. State is derived from the newest file:
@@ -21,12 +20,6 @@ final class ActivityMonitor {
 
     private(set) var state: ClaudeActivity = .ready
     var onChange: (() -> Void)?
-
-    // Optional: post a macOS notification each time Claude Code turns ready (green).
-    var notifyOnReady: Bool {
-        get { UserDefaults.standard.bool(forKey: "notify_on_ready") }
-        set { UserDefaults.standard.set(newValue, forKey: "notify_on_ready") }
-    }
 
     // Optional: play a sound when the stoplight turns green (ready) or red (blocked).
     var soundOnChange: Bool {
@@ -61,23 +54,9 @@ final class ActivityMonitor {
             onChange?()
             if soundOnChange { playSound(for: new) }
             if new == .ready, previous != .ready {
-                if notifyOnReady { notifyReady() }
                 TelegramNotifier.sendReadyMessage()
             }
         }
-    }
-
-    private func notifyReady() {
-        let content = UNMutableNotificationContent()
-        content.title = "Claude Code"
-        content.body  = "Ready for your next prompt"
-        content.sound = soundOnChange ? nil : .default   // avoid a double chime
-        let request = UNNotificationRequest(
-            identifier: "tokenstat.ready.\(UUID().uuidString)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
     }
 
     private func playSound(for activity: ClaudeActivity) {

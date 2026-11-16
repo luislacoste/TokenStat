@@ -7,7 +7,6 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
     private var intervalField: NSTextField!
-    private var notifyCheckbox: NSButton!
     private var soundCheckbox: NSButton!
     private var botTokenField: NSSecureTextField!
     private var chatIdField: NSTextField!
@@ -18,7 +17,6 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     func show() {
         if window == nil { build() }
         intervalField.stringValue    = "\(ClaudeService.shared.refreshInterval)"
-        notifyCheckbox.state         = ActivityMonitor.shared.notifyOnReady ? .on : .off
         soundCheckbox.state          = ActivityMonitor.shared.soundOnChange ? .on : .off
         botTokenField.stringValue    = TelegramNotifier.botToken
         chatIdField.stringValue      = TelegramNotifier.chatID
@@ -34,7 +32,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
 
     private func build() {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 488),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 460),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -46,32 +44,27 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
 
         // ── Refresh interval ─────────────────────────────────
 
-        label(v, "Refresh Interval", y: 454, bold: true)
-        label(v, "Fetch new data every", y: 426, x: 20, w: 148)
+        label(v, "Refresh Interval", y: 426, bold: true)
+        label(v, "Fetch new data every", y: 398, x: 20, w: 148)
 
-        intervalField = NSTextField(frame: NSRect(x: 172, y: 422, width: 52, height: 24))
+        intervalField = NSTextField(frame: NSRect(x: 172, y: 394, width: 52, height: 24))
         intervalField.alignment      = .center
         intervalField.font           = .monospacedSystemFont(ofSize: 12, weight: .regular)
         intervalField.placeholderString = "5"
         v.addSubview(intervalField)
 
-        label(v, "minutes", y: 426, x: 230, w: 80)
-        label(v, "Minimum 1 · Maximum 60", y: 400, small: true)
+        label(v, "minutes", y: 398, x: 230, w: 80)
+        label(v, "Minimum 1 · Maximum 60", y: 372, small: true)
 
         // ── Separator ─────────────────────────────────────────
 
-        let box = NSBox(frame: NSRect(x: 0, y: 380, width: 360, height: 1))
+        let box = NSBox(frame: NSRect(x: 0, y: 352, width: 360, height: 1))
         box.boxType = .separator
         v.addSubview(box)
 
         // ── Notifications ─────────────────────────────────────
 
-        label(v, "Notifications", y: 356, bold: true)
-
-        notifyCheckbox = NSButton(checkboxWithTitle: "Notify when Claude Code turns ready (green)",
-                                   target: nil, action: nil)
-        notifyCheckbox.frame = NSRect(x: 20, y: 328, width: 320, height: 20)
-        v.addSubview(notifyCheckbox)
+        label(v, "Notifications", y: 328, bold: true)
 
         soundCheckbox = NSButton(checkboxWithTitle: "Play a sound when it turns green or red",
                                   target: nil, action: nil)
@@ -174,7 +167,6 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
 
         ClaudeService.shared.refreshInterval = v
         ClaudeService.shared.refresh()
-        ActivityMonitor.shared.notifyOnReady = (notifyCheckbox.state == .on)
         ActivityMonitor.shared.soundOnChange = (soundCheckbox.state == .on)
         TelegramNotifier.botToken = botTok
         TelegramNotifier.chatID   = chatId
