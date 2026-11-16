@@ -57,9 +57,6 @@ final class StatusBarController {
         add("Refresh",          key: "r", action: #selector(onRefresh))
         add("Settings…",        key: ",", action: #selector(onSettings))
         menu.addItem(.separator())
-        add("Follow on Instagram", key: "", action: #selector(openInstagram))
-        add("GitHub",              key: "", action: #selector(openGitHub))
-        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit TokenStat",
                                 action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
@@ -262,10 +259,7 @@ final class StatusBarController {
     // MARK: - Actions
 
     @objc private func onRefresh()     { ClaudeService.shared.refresh() }
-    @objc private func onSettings()    { SettingsPanel.shared.show() }
-    @objc private func openInstagram() { NSWorkspace.shared.open(URL(string: "https://www.instagram.com/luislacoste_")!) }
-    @objc private func openGitHub()    { NSWorkspace.shared.open(URL(string: "https://github.com/luislacoste")!) }
-}
+    @objc private func onSettings()    { SettingsPanel.shared.show() }}
 
 // MARK: - NSMutableAttributedString += helper
 

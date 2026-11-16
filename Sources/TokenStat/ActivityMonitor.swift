@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import UserNotifications
 
 // Watches ~/.claude/projects/**/*.jsonl — Claude Code appends to the active
@@ -28,6 +28,12 @@ final class ActivityMonitor {
         set { UserDefaults.standard.set(newValue, forKey: "notify_on_ready") }
     }
 
+    // Optional: play a sound when the stoplight turns green (ready) or red (blocked).
+    var soundOnChange: Bool {
+        get { UserDefaults.standard.bool(forKey: "sound_on_change") }
+        set { UserDefaults.standard.set(newValue, forKey: "sound_on_change") }
+    }
+
     private var timer: Timer?
     // Tail classification cache — only re-read the file when it changed.
     private var cachedTail: (url: URL, mtime: Date, tail: SessionTail)?
@@ -53,6 +59,7 @@ final class ActivityMonitor {
             let previous = state
             state = new
             onChange?()
+            if soundOnChange { playSound(for: new) }
             if new == .ready, previous != .ready {
                 if notifyOnReady { notifyReady() }
                 TelegramNotifier.sendReadyMessage()
@@ -64,13 +71,23 @@ final class ActivityMonitor {
         let content = UNMutableNotificationContent()
         content.title = "Claude Code"
         content.body  = "Ready for your next prompt"
-        content.sound = .default
+        content.sound = soundOnChange ? nil : .default   // avoid a double chime
         let request = UNNotificationRequest(
             identifier: "tokenstat.ready.\(UUID().uuidString)",
             content: content,
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    private func playSound(for activity: ClaudeActivity) {
+        let name: String
+        switch activity {
+        case .ready:   name = "Glass"
+        case .blocked: name = "Sosumi"
+        case .working: return
+        }
+        NSSound(named: NSSound.Name(name))?.play()
     }
 
     // MARK: - State detection
